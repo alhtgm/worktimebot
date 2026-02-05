@@ -9,6 +9,7 @@ import io
 import random
 from datetime import datetime, timedelta
 import matplotlib.dates as mdates
+import math
 
 # --- .env読み込み ---
 current_dir = Path(__file__).resolve().parent
@@ -30,96 +31,173 @@ class GraphBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # 起動時にコマンドを同期
         await self.tree.sync()
 
 bot = GraphBot()
 
-# --- データ生成用（ダミー） ---
-# 本来はデータベースから「過去1週間の勉強時間」を取得する部分です。
-def get_mock_week_data():
-    today = datetime.now().date()
+# --- 日付文字列を解析する関数 ---
+def parse_date(date_str: str):
+    """
+    "2/1", "2025-02-01", "2026/2/20" などの文字列を datetime オブジェクトに変換
+    """
+    formats = [
+        "%Y/%m/%d", "%Y-%m-%d", # 年あり
+        "%m/%d", "%m-%d"        # 年なし
+    ]
+    
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            # 年が省略された場合 (1900年になる) は、現在の年に補正
+            if dt.year == 1900:
+                dt = dt.replace(year=datetime.now().year)
+            return dt.date()
+        except ValueError:
+            continue
+            
+    return None # 解析失敗
+
+# --- 指定範囲の模擬データ生成 ---
+def get_mock_data_range(start_date, end_date):
     dates = []
     hours = []
     
-    # 過去7日分の日付と、ランダムな勉強時間(0~5時間)を生成
-    for i in range(7):
-        date = today - timedelta(days=6-i)
-        dates.append(date)
-        # ランダムな時間 (GitHubの草っぽさを出すため0の日も作る)
-        hours.append(random.choice([0, 0.5, 1.0, 2.5, 4.0, 5.5, 8.0]))
+    # 日数差を計算
+    delta = (end_date - start_date).days
+    
+    # 開始日が終了日より後の場合などは空などを返す対策
+    if delta < 0:
+        return [], []
+
+    for i in range(delta + 1):
+        current_date = start_date + timedelta(days=i)
+        dates.append(current_date)
         
+        # ランダムな勉強時間 (0〜10h)
+        if random.random() < 0.2:
+            hours.append(0)
+        else:
+            hours.append(round(random.uniform(0.5, 9.0), 1))
+            
     return dates, hours
 
 # --- グラフ描画ロジック ---
-def create_graph_image(graph_type: str):
-    dates, hours = get_mock_week_data()
+def create_graph_image(graph_type: str, start_date, end_date):
+    dates, hours = get_mock_data_range(start_date, end_date)
+    num_days = len(dates)
     
-    # プロットの初期化
-    plt.figure(figsize=(10, 5))
-    
-    # 日本語フォント設定がない環境での文字化けを防ぐため英語表記にします
+    # 画像サイズ調整
+    width = 10 if num_days < 20 else 15
+    plt.figure(figsize=(width, 6))
     
     if graph_type == 'bar':
-        # --- 1. 棒グラフ (Bar Chart) ---
-        # 色: 落ち着いた青
+        # === 棒グラフ ===
         plt.bar(dates, hours, color='#4c8bf5', alpha=0.8)
         
-        plt.title('Study Time (Last 7 Days)', fontsize=16)
-        plt.xlabel('Date', fontsize=12)
+        plt.title(f'Study Time ({start_date.strftime("%Y/%m/%d")} - {end_date.strftime("%m/%d")})', fontsize=16)
         plt.ylabel('Hours', fontsize=12)
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.grid(axis='y', linestyle='--', alpha=0.5)
         
-        # X軸の日付フォーマット
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        # X軸フォーマット
+        ax = plt.gca()
+        if num_days <= 15:
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        elif num_days <= 40:
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        else:
+            ax.xaxis.set_major_locator(mdates.MonthLocator())
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m'))
+            
+        plt.xticks(rotation=45)
 
     elif graph_type == 'grass':
-        # --- 2. 草/ヒートマップ (Git-style) ---
-        # 1行7列の行列としてデータを扱う
-        data_matrix = [hours] 
+        # === 草 (ヒートマップ) ===
+        weeks = math.ceil(num_days / 7)
+        padded_hours = hours + [None] * (weeks * 7 - len(hours))
         
-        # 色: 白→緑 (GitHub風)
-        plt.imshow(data_matrix, cmap='Greens', aspect='auto', vmin=0, vmax=8)
-        
-        plt.title('Contribution Graph (Intensity)', fontsize=16)
-        plt.yticks([]) # Y軸の目盛りは不要
-        
-        # X軸の設定
-        plt.xticks(range(7), [d.strftime('%m/%d') for d in dates])
-        
-        # 各マスに数字を入れる
-        for i in range(7):
-            val = hours[i]
-            color = 'white' if val > 4 else 'black' # 背景が濃い場合は文字を白く
-            plt.text(i, 0, f"{val}h", ha='center', va='center', color=color, fontsize=12, fontweight='bold')
+        matrix = []
+        for i in range(weeks):
+            matrix.append(padded_hours[i*7 : (i+1)*7])
+            
+        plot_data = [[h if h is not None else -1 for h in row] for row in matrix]
 
-    # メモリバッファに画像を保存
+        plt.imshow(plot_data, cmap='Greens', aspect='auto', vmin=0, vmax=9)
+        plt.title(f'Contribution ({start_date.strftime("%m/%d")} ~ {end_date.strftime("%m/%d")})', fontsize=16)
+        
+        plt.xlabel('Day', fontsize=12)
+        plt.ylabel('Week', fontsize=12)
+        plt.xticks(range(7), ['Day1', '2', '3', '4', '5', '6', '7'])
+        plt.yticks(range(weeks), [f"W{i+1}" for i in range(weeks)])
+
+        # データ数が多い場合は数字を表示しない
+        if num_days <= 35:
+            for y in range(weeks):
+                for x in range(7):
+                    val = matrix[y][x]
+                    if val is not None:
+                        color = 'white' if val > 4.5 else 'black'
+                        plt.text(x, y, f"{val}", ha='center', va='center', 
+                                 color=color, fontsize=10, fontweight='bold')
+
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
     buf.seek(0)
-    plt.close() # メモリ解放
+    plt.close()
     
     return buf
 
 # --- コマンド実装 ---
-@bot.tree.command(name="graph", description="過去1週間の勉強時間をグラフにします")
-@app_commands.describe(type="グラフの種類を選択")
-@app_commands.choices(type=[
-    app_commands.Choice(name="棒グラフ (推移が見やすい)", value="bar"),
-    app_commands.Choice(name="草 (Gitのようなヒートマップ)", value="grass")
-])
-async def graph(interaction: discord.Interaction, type: str):
-    await interaction.response.defer() # 生成に少し時間がかかるため「考え中」にする
+@bot.tree.command(name="graph", description="指定した期間の勉強時間をグラフ化します")
+@app_commands.describe(
+    type="グラフの種類 (棒グラフ / 草)",
+    start="開始日 (例: 2/1, 2026-02-01)",
+    end="終了日 (省略すると今日まで。例: 2/20)"
+)
+@app_commands.choices(
+    type=[
+        app_commands.Choice(name="棒グラフ", value="bar"),
+        app_commands.Choice(name="草 (ヒートマップ)", value="grass")
+    ]
+)
+async def graph(interaction: discord.Interaction, type: str, start: str, end: str = None):
+    # 1. 開始日の解析
+    start_date = parse_date(start)
+    if start_date is None:
+        await interaction.response.send_message(f"⚠️ 開始日 `{start}` の形式がわかりません。\n`2/1` や `2026-02-01` のように入力してください。", ephemeral=True)
+        return
+
+    # 2. 終了日の解析
+    if end:
+        end_date = parse_date(end)
+        if end_date is None:
+            await interaction.response.send_message(f"⚠️ 終了日 `{end}` の形式がわかりません。", ephemeral=True)
+            return
+    else:
+        # 省略されたら今日にする
+        end_date = datetime.now().date()
+
+    # 3. 日付の前後チェック
+    if start_date > end_date:
+        await interaction.response.send_message("⚠️ 開始日が終了日より未来になっています。", ephemeral=True)
+        return
+
+    await interaction.response.defer()
     
     try:
-        # グラフ生成処理を呼び出し（重い処理は別スレッドが望ましいですが簡易的にここで実行）
-        image_buffer = create_graph_image(type)
+        image_buffer = create_graph_image(type, start_date, end_date)
         
-        # Discordに送信
-        file = discord.File(image_buffer, filename=f"study_graph_{type}.png")
-        await interaction.followup.send(f"📊 過去1週間の学習レポート ({type})", file=file)
+        # ファイル名をわかりやすく (例: graph_20260201-20260220.png)
+        filename = f"graph_{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}.png"
+        file = discord.File(image_buffer, filename=filename)
+        
+        await interaction.followup.send(
+            content=f"📊 **期間レポート**: {start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}",
+            file=file
+        )
         
     except Exception as e:
-        await interaction.followup.send(f"グラフ生成中にエラーが発生しました: {e}")
+        await interaction.followup.send(f"エラーが発生しました: {e}")
 
 bot.run(TOKEN)
