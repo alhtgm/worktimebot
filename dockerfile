@@ -1,7 +1,13 @@
-FROM python:3.14.3
+FROM python:3.11-slim
 
-WORKDIR /usr/src/app
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "./mainbot.py"]
+ENV PYTHONUNBUFFERED=1
+ENV ENV TZ=Asia/Tokyo
+
+CMD ["python", "src/main.py"]

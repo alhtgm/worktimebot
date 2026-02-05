@@ -1,0 +1,9 @@
+services:
+  bot:
+    built: .
+    container_name: study-bot
+    restart: always
+    env_file: .env
+    volumes:
+      - ./src:/app/src
+      - ./src:/app/src
