@@ -99,8 +99,22 @@ class GraphCroneCog(commands.Cog):
             date_map[d] = 0 # 初期値0
 
         if user_id:
-            # DBから取得: [(date_str, minutes), ...]
-            data = self.db_methods.get_daily_study_time(user_id, start_date, end_date)
+            # DBから直接取得する形に修正 (DatabasMethodsの変更を回避)
+            query = '''
+                SELECT date(start_time), SUM(duration_minutes)
+                FROM study_sessions
+                WHERE user_id = ? 
+                  AND date(start_time) BETWEEN ? AND ?
+                  AND duration_minutes IS NOT NULL
+                GROUP BY date(start_time)
+                ORDER BY date(start_time)
+            '''
+            
+            with self.db_config.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+                data = cursor.fetchall()
+
             for row in data:
                 d_str = row[0] # "YYYY-MM-DD"
                 minutes = row[1]
