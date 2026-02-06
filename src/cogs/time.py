@@ -44,7 +44,22 @@ class TimeCog(commands.Cog):
             date_map[d] = 0.0
 
         # 2. DBからデータを取得
-        db_data = self.db_methods.get_daily_study_time(user_id, start_date, end_date)
+        # db_data = self.db_methods.get_daily_study_time(user_id, start_date, end_date) # 廃止
+        
+        query = '''
+            SELECT date(start_time), SUM(duration_minutes)
+            FROM study_sessions
+            WHERE user_id = ? 
+              AND date(start_time) BETWEEN ? AND ?
+              AND duration_minutes IS NOT NULL
+            GROUP BY date(start_time)
+            ORDER BY date(start_time)
+        '''
+        
+        with self.db_config.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+            db_data = cursor.fetchall()
         
         for row in db_data:
             d_str = row[0] # "YYYY-MM-DD"
