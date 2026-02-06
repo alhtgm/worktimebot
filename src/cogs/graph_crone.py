@@ -50,7 +50,7 @@ class ReportBot(commands.Bot):
             await self.send_reports_to_all(period_type="weekly")
 
     # --- 定期実行タスク (Monthly) ---
-    # 毎日 9:00 にチェックし、1日の場合のみ実行
+    # 毎月 9:00 にチェックし、1日の場合のみ実行
     @tasks.loop(time=time(hour=9, minute=0), reconnect=True)
     async def monthly_report_task(self):
         now = datetime.now()
