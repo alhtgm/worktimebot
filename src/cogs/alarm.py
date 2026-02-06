@@ -9,19 +9,39 @@ from pathlib import Path
 class AlarmCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # 実行中のアラームタスクを管理する辞書 {user_id: task}
+        self.active_alarms = {}
 
-    # --- タイマー実行処理 ---
+    # --- アラームのセットアップ ---
     async def run_alarm(self, interaction: discord.Interaction, minutes: int):
+        # 既存のアラームがあればキャンセル
+        if interaction.user.id in self.active_alarms:
+            self.active_alarms[interaction.user.id].cancel()
+        
         # メッセージを更新して待機開始
         await interaction.response.edit_message(content=f"了解しました。{minutes}分後にこのDMでお知らせします。", view=None)
         
-        await asyncio.sleep(minutes * 60)
-        
-        # 時間経過後の通知
+        # タスクを作成して登録
+        task = self.bot.loop.create_task(self.alarm_task(interaction.user, minutes))
+        self.active_alarms[interaction.user.id] = task
+
+    # --- 実際の待機ロジック ---
+    async def alarm_task(self, user: discord.User, minutes: int):
         try:
-            await interaction.user.send(f"⏰ {minutes}分が経過しました！")
-        except Exception:
+            await asyncio.sleep(minutes * 60)
+            
+            # 時間経過後の通知
+            await user.send(f"⏰ {minutes}分が経過しました！")
+            
+        except asyncio.CancelledError:
+            # キャンセルされた場合
             pass
+        except Exception as e:
+            print(f"アラームエラー: {e}")
+        finally:
+            # タスク完了後に辞書から削除
+            if user.id in self.active_alarms:
+                self.active_alarms.pop(user.id, None)
 
     # --- イベント処理 ---
     @commands.Cog.listener()
@@ -48,7 +68,19 @@ class AlarmCog(commands.Cog):
             except discord.Forbidden:
                 print(f"{member.name} へのDM送信に失敗しました。")
 
-        # 2. VCからBot以外がいなくなった時（自動切断）
+        # 2. VCから退出した時 -> アラーム解除
+        if before.channel is not None and after.channel is None:
+            if member.id in self.active_alarms:
+                task = self.active_alarms[member.id]
+                task.cancel() # タスクをキャンセル
+                self.active_alarms.pop(member.id, None)
+                
+                try:
+                    await member.send("🚪 VCから退出したため、アラームを解除しました。")
+                except:
+                    pass
+
+        # 3. VCからBot以外がいなくなった時（自動切断）
         voice_client = member.guild.voice_client
         if voice_client and voice_client.channel:
             if len(voice_client.channel.members) == 1:
