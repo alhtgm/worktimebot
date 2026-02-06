@@ -46,10 +46,24 @@ class RankingCog(commands.Cog):
             prev_start_date = prev_end_date - timedelta(days=29)
 
         # 1. 期間内のランキングデータを取得 (List of (user_id, total_minutes))
-        current_data = self.db_methods.get_aggregated_ranking(guild.id, start_date, end_date)
-        
-        # 2. 比較用に前の期間のデータを取得 (辞書化して引きやすくする)
-        prev_data_raw = self.db_methods.get_aggregated_ranking(guild.id, prev_start_date, prev_end_date)
+        query = '''
+            SELECT user_id, SUM(duration_minutes) as total_time
+            FROM study_sessions
+            WHERE server_id = ?
+              AND date(start_time) BETWEEN ? AND ?
+              AND duration_minutes IS NOT NULL
+            GROUP BY user_id
+            ORDER BY total_time DESC
+        '''
+        with self.db_config.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (guild.id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+            current_data = cursor.fetchall()
+            
+            # 2. 比較用に前の期間のデータを取得 (辞書化して引きやすくする)
+            cursor.execute(query, (guild.id, prev_start_date.strftime('%Y-%m-%d'), prev_end_date.strftime('%Y-%m-%d')))
+            prev_data_raw = cursor.fetchall()
+
         prev_data_map = {row[0]: row[1] for row in prev_data_raw} # {user_id: minutes}
 
         # 3. 整形
