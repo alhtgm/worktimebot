@@ -19,12 +19,13 @@ class DatabaseMethods:
         """
         with self.config.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE user_id = ?;', (user_id,))
             # ユーザーを登録（すでにいれば無視）
-            cursor.execute('INSERT OR IGNORE INTO users (user_id, name) VALUES (?, ?)', (user_id, user_name))
+            cursor.execute('INSERT OR IGNORE INTO users (user_id, name) VALUES (?, ?);', (user_id, user_name))
             # 名前が変わっている可能性があるので更新
-            cursor.execute('UPDATE users SET name = ? WHERE user_id = ?', (user_name, user_id))
+            cursor.execute('UPDATE users SET name = ? WHERE user_id = ?;', (user_name, user_id))
             # サーバーを登録（すでにいれば無視）
-            cursor.execute('INSERT OR IGNORE INTO servers (server_id) VALUES (?)', (server_id,))
+            cursor.execute('INSERT OR IGNORE INTO servers (server_id) VALUES (?);', (server_id,))
             conn.commit()
 
     def start_session(self, session_id, user_id, server_id):
