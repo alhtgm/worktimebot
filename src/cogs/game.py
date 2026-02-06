@@ -4,11 +4,6 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ▼▼▼ 設定エリア ▼▼▼
-# 警告メッセージを送るテキストチャンネルのID
-ALERT_CHANNEL_ID = 1468815312664399967 
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲
-
 class GameCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -30,8 +25,13 @@ class GameCog(commands.Cog):
 
                 # --- 処罰執行 ---
                 
-                # A. 全体に晒す
-                alert_channel = self.bot.get_channel(ALERT_CHANNEL_ID)
+                alert_channel = member.guild.system_channel
+                if not alert_channel:
+                    for channel in member.guild.text_channels:
+                        if channel.permissions_for(member.guild.me).send_messages:
+                            alert_channel = channel
+                            break
+                
                 if alert_channel:
                     await alert_channel.send(
                         f"@everyone  **緊急警報** \n"
