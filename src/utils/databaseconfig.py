@@ -1,10 +1,18 @@
 import sqlite3
 import os
 
+from pathlib import Path
+
 class DatabaseConfig:
     #sqlite3の接続と初期化
-    def __init__(self, db_path="data/study_bot.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        if db_path is None:
+            # worktimebot/data/study_bot.db を指すように変更
+            # .../src/utils/databaseconfig.py -> parents[2] = .../worktimebot
+            self.db_path = str(Path(__file__).resolve().parents[2] / 'data' / 'study_bot.db')
+        else:
+            self.db_path = db_path
+            
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.init_db()
 

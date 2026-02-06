@@ -33,7 +33,6 @@ class StudyTimeCog(commands.Cog):
 
         # 1. ユーザーがVCに参加した（または移動してきた）時 -> 【計測開始】
         if before.channel != after.channel and after.channel is not None:
-            
             # まだアクティブなセッションがない場合のみ開始
             if member.id not in self.active_sessions:
                 # セッションIDの生成

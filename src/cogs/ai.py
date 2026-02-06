@@ -22,7 +22,7 @@ else:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # モデルの初期化 (安定版の 1.5-flash を使用します)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # --- AIフィードバック生成関数 ---
 async def generate_feedback(duration_str, goal, trouble, done, reflection, next_step):
