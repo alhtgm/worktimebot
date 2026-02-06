@@ -4,12 +4,21 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
+import uuid
+# ★データベース関連のインポート
+from utils.databaseconfig import DatabaseConfig
+from utils.databasemethods import DatabaseMethods
 
 class StudyTimeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # ユーザーの入室時間を記録する辞書 {ユーザーID: 入室時間(datetime)}
-        self.study_records = {}
+        # データベース設定の初期化
+        self.db_config = DatabaseConfig()
+        self.db_methods = DatabaseMethods(self.db_config)
+        
+        # セッションIDをメモリ上で一時的に保持する辞書 {user_id: session_id}
+        # ※DBには保存されますが、退室時にどのセッションを終了させるか知るために必要
+        self.active_sessions = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -25,10 +34,18 @@ class StudyTimeCog(commands.Cog):
         # 1. ユーザーがVCに参加した（または移動してきた）時 -> 【計測開始】
         if before.channel != after.channel and after.channel is not None:
             
-            # まだ記録がない場合のみ開始時間をセット
-            if member.id not in self.study_records:
-                self.study_records[member.id] = datetime.now()
-                print(f"[開始] {member.name} さんの計測をスタートしました。")
+            # まだアクティブなセッションがない場合のみ開始
+            if member.id not in self.active_sessions:
+                # セッションIDの生成
+                session_id = str(uuid.uuid4())
+                self.active_sessions[member.id] = session_id
+                
+                # ユーザー情報とサーバー情報の同期
+                self.db_methods.sync_user_and_server(member.id, member.display_name, member.guild.id)
+                # セッション開始をDBに記録
+                self.db_methods.start_session(session_id, member.id, member.guild.id)
+                
+                print(f"[開始] {member.name} さんの計測をスタートしました。(Session: {session_id})")
 
                 # BotもVCに入って「計測中」であることを示す（不要なら削除可）
                 if member.guild.voice_client is None:
@@ -46,31 +63,20 @@ class StudyTimeCog(commands.Cog):
         # 2. ユーザーがVCから退出した時 -> 【計測終了 & 結果通知】
         if before.channel is not None and after.channel is None:
             
-            # 記録があれば計算する
-            if member.id in self.study_records:
-                start_time = self.study_records.pop(member.id) # 記録を取り出して削除
-                end_time = datetime.now()
+            # アクティブなセッションがあれば終了処理
+            if member.id in self.active_sessions:
+                session_id = self.active_sessions.pop(member.id) # IDを取り出して削除
                 
-                # 経過時間を計算
-                duration = end_time - start_time
-                total_seconds = int(duration.total_seconds())
-                
-                # 表示用の整形 (時・分・秒)
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                seconds = total_seconds % 60
-                
-                time_str = f"{seconds}秒"
-                if minutes > 0:
-                    time_str = f"{minutes}分 " + time_str
-                if hours > 0:
-                    time_str = f"{hours}時間 " + time_str
+                # DB上でセッション終了処理（時間の計算と保存）
+                self.db_methods.end_session(session_id)
 
-                print(f"[終了] {member.name} さんの計測終了: {time_str}")
+                print(f"[終了] {member.name} さんの計測終了 (Session: {session_id})")
 
                 # 結果をDMで送信
+                # ※ここでの具体的な時間はDBから再取得するか計算する必要がありますが、
+                # 簡易的にメッセージだけ送るか、必要ならDBから取得するロジックを追加できます。
                 try:
-                    await member.send(f"📊 お疲れ様でした！今回の滞在時間は **{time_str}** でした。")
+                    await member.send(f"📊 お疲れ様でした！学習時間を記録しました。")
                 except discord.Forbidden:
                     pass
 
