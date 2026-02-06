@@ -6,10 +6,15 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime, timedelta
 import random
+# ★データベース関連のインポート
+from utils.databaseconfig import DatabaseConfig
+from utils.databasemethods import DatabaseMethods
 
 class TimeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.db_config = DatabaseConfig()
+        self.db_methods = DatabaseMethods(self.db_config)
 
     # --- 日付解析用 ---
     def parse_date(self, date_str: str):
@@ -24,24 +29,34 @@ class TimeCog(commands.Cog):
                 continue
         return None
 
-    # --- 模擬データ生成 (リスト形式で返す) ---
-    def get_mock_data_list(self, start_date, end_date):
+    # --- データ取得 (DBから) ---
+    def get_data_list(self, user_id, start_date, end_date):
         data_list = []
-        current = start_date
         
-        # 日付の差分を計算
-        delta = (end_date - current).days
+        # 1. 範囲内の全日付を0で初期化
+        date_map = {}
+        delta = (end_date - start_date).days
         if delta < 0: return []
-
+        
         for i in range(delta + 1):
-            # ランダムな時間生成
-            if random.random() < 0.2:
-                hours = 0.0
-            else:
-                hours = round(random.uniform(0.5, 9.0), 1)
+            d = start_date + timedelta(days=i)
+            # datetime.dateオブジェクトのまま扱います
+            date_map[d] = 0.0
+
+        # 2. DBからデータを取得
+        db_data = self.db_methods.get_daily_study_time(user_id, start_date, end_date)
+        
+        for row in db_data:
+            d_str = row[0] # "YYYY-MM-DD"
+            minutes = row[1]
             
-            data_list.append({"date": current, "hours": hours})
-            current += timedelta(days=1)
+            d_obj = datetime.strptime(d_str, '%Y-%m-%d').date()
+            if d_obj in date_map:
+                date_map[d_obj] = round(minutes / 60, 1) # 分 -> 時間
+
+        # 3. リストに戻す
+        for d in sorted(date_map.keys()):
+            data_list.append({"date": d, "hours": date_map[d]})
                 
         return data_list
 
@@ -96,8 +111,8 @@ class TimeCog(commands.Cog):
             await interaction.response.send_message("⚠️ 開始日が終了日より未来になっています。", ephemeral=True)
             return
 
-        # データ生成
-        data = self.get_mock_data_list(start_date, end_date)
+        # データ取得 (DBから)
+        data = self.get_data_list(interaction.user.id, start_date, end_date)
         
         if not data:
             await interaction.response.send_message("データがありません。", ephemeral=True)
