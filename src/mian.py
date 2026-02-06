@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-load_dotenv(Path(__file__).parents[3] / '.env')
+load_dotenv(Path(__file__).parents[2] / '.env')
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 intents = discord.Intents.default()
